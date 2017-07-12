@@ -1,4 +1,4 @@
-TITLE by NEIL SEAS
+Prosper Loan EDA by NEIL SEAS
 ========================================================
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
@@ -8,6 +8,10 @@ setwd('~/Courses/Udacity/Data_Analyst_Nanodegree/eda_project/')
 library(ggplot2)
 library(lubridate)
 library(dplyr)
+library(gridExtra)
+library(GGally)
+library(reshape2)
+library(RColorBrewer)
 library(maps)
 ```
 
@@ -124,6 +128,13 @@ Let's split the data into loans originated prior to the introduction of
 Prosper scores and those originated after.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
+# update 'True' and 'False' to be boolean rather than text
+loan_data$IsBorrowerHomeowner <- 
+    ifelse(loan_data$IsBorrowerHomeowner == 'True', TRUE, FALSE)
+
+loan_data$IncomeVerifiable <-
+    ifelse(loan_data$IncomeVerifiable == 'True', TRUE, FALSE)
+
 # let's add a field to the loan_data set to indicate which set pre_prosper_score
 # or prosper_score
 loan_data$prosper_score <- (loan_data$LoanOriginationDate > '2009-06-30')
@@ -133,25 +144,26 @@ loan_data_prosper_score <- subset(loan_data, prosper_score)
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data, aes(x = Term)) +
-    geom_histogram(binwidth = 1) +
-    facet_wrap(~prosper_score)
+    geom_bar()
 ```
 
 I'm very surprised the Term of the loans is so concentrated at 36 months.  I
 was expecting that the Terms would be on the shorter side (<= 60 months), but
-with a much more diverse set of terms.  In the pre_prosper_score data there is
-only 36 month terms.  Let's see if the BorrowerRate is similarly concentrated.
+with a much more diverse.  Let's see if the BorrowerRate is similarly
+concentrated.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data, aes(x = BorrowerRate)) +
-    geom_histogram(binwidth = .01) +
-    facet_wrap(~prosper_score)
+grid.arrange(ggplot(data = loan_data, aes(x = BorrowerRate)) +
+    geom_histogram(binwidth = .01),
+    ggplot(data = loan_data, aes(x = 1, y = BorrowerRate)) +
+        geom_boxplot(), nrow = 1)
 ```
 
 The distribution of interest rates is slightly skewed to the right and also has
-some large spikes in both the pre-Prosper and Prosper groups.  These spikes may
+some large spikes in the upper tail of the distribution.  These spikes may
 be some sort of maximum allowable rate, that is set either internally or is
-prescribed by regulations.  
+prescribed by regulations.  There are also a a few outliers with rates above
+40%, but these are all prior to the introduction of the Prosper Score.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 loan_data_by_year <- group_by(loan_data, date = year(LoanOriginationDate))
@@ -162,7 +174,9 @@ ggplot(data = loan_data_by_year, aes(x = date, y = MaxRate)) +
     scale_x_discrete(limits = seq(2005, 2014))
 ```
 
-The maximum borrower rate declined nearly 5% from 2011 to 2014.
+The maximum borrower rate declined nearly 5% from 2011 to 2014.  This could
+reflect overall market conditions and/or reflect higher credit standards for
+borrowers following the introduction of the Prosper Score.
 
 Interesting that there are loans with a zero BorrowerRate. Let's look at a
 summary of those loans.
@@ -175,13 +189,10 @@ table(zero_rate_loans$CreditGrade)
 The CreditGrade is not what one would expect for 0% interest rate loans.  Since
 there are only 8 loans it isn't going to impact the analysis.
 
-```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data_prosper_score, aes(x = EstimatedLoss)) +
-    geom_histogram(binwidth = .01)
+```{r echo = FALSE}
+ggplot(data = loan_data_prosper_score, aes(x = ProsperScore)) +
+    geom_bar()
 ```
-
-The bulk of the distribution lies between 0 and 20% estimated loss, though there
-are a few outliers
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 # set the factor levels to be in order of decreasing quality
@@ -196,6 +207,18 @@ ggplot(data = loan_data_prosper_score, aes(x = ProsperRating..Alpha.)) +
 It looks like the loans are distributed across the rating categories.  When we
 move on to the multivariate analysis we'll want to see how these rating
 categories correlate to other attributes.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+grid.arrange (ggplot(data = loan_data_prosper_score, aes(x = EstimatedLoss)) +
+    geom_histogram(binwidth = .01),
+    ggplot(data = loan_data_prosper_score, aes(x = 1, y = EstimatedLoss)) +
+        geom_boxplot(), nrow = 1)
+```
+
+The bulk of the distribution lies between 0 and 20% estimated loss, though there
+are a few outliers.  The estimated loss of the most extreme outliers is 36.6%,
+which is higher than the Borrower Rate on the loans.  The estimated return on
+these loans is **negative**.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 # convert the listing codes from numeric to their text values
@@ -225,15 +248,22 @@ loan_data$listing_category <- factor(loan_data$listing_category,
                                        'Wedding'))
 
 ggplot(data = loan_data, aes(x = listing_category)) +
-    geom_histogram(stat = "count") +
+    geom_bar() +
     theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 ```
+
+The majority of loans fall into the **Debt Consolidation** category.  It is
+surprising how many are labelled as **Not Available**.  Given the plethora of
+categories available I would be a wary of a borrower who lists under this
+category.  We'll see if Prosper investors lend at higher rates to these
+borrowers.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 # use dplyr group_by to group by loans by BorrowerState
 loan_data_by_state <- group_by(loan_data, BorrowerState)
 # show loan count by state in descending order
-loan_count_by_state <- arrange(summarise(loan_data_by_state, loans = n()), desc(loans))
+loan_count_by_state <- arrange(summarise(loan_data_by_state, loans = n()), 
+                               desc(loans))
 loan_count_by_state
 ```
 
@@ -249,7 +279,7 @@ loan_data <- within(loan_data,
                                                  decreasing=TRUE))))
                                               
 ggplot(data = loan_data, aes(x = EmploymentStatus)) +
-    geom_histogram(stat="count")  +
+    geom_bar()  +
     theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 ```
 
@@ -276,18 +306,33 @@ may add evidence for that claim.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data, aes(x = IsBorrowerHomeowner)) +
-    geom_histogram(stat = "count") +
-    facet_wrap(~prosper_score)
+    geom_histogram(stat = "count")
 ```
 
-Homeowners were a minority prior to the introduction of the Prosper Score, but
-now represent a small majority.
+The portfolio is roughly split between homeowners and non-homeowners.  It will
+be interesting to see if this affects the borrower rate when we look at the
+bivariate analysis.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data, aes(x = CreditScoreRangeLower)) +
+grid.arrange(ggplot(data = loan_data, 
+                    aes(x = CreditScoreRangeLower)) +
+                 geom_histogram(bindwidth = 10) +
+                 scale_x_continuous(limits = c(300, 900)),
+    ggplot(data = loan_data, 
+           aes(x = 1, y = CreditScoreRangeLower)) +
+        geom_boxplot(), 
+    ggplot(data = loan_data_prosper_score, 
+           aes(x = CreditScoreRangeLower)) +
     geom_histogram(bindwidth = 10) +
-    scale_x_continuous(limits = c(300, 900)) +
-    facet_wrap(~prosper_score, scales = "free_y")
+        scale_x_continuous(limits = c(300, 900)),
+    ggplot(data = loan_data_prosper_score, 
+           aes(x = 1, y = CreditScoreRangeLower)) +
+        geom_boxplot(),
+    nrow = 2)
+```
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+summary(loan_data$CreditScoreRangeLower)
 ```
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
@@ -295,11 +340,11 @@ summary(loan_data_prosper_score$CreditScoreRangeLower)
 ```
 
 The **CreditScoreRangeLower** distribution is relatively normal with the
-interquartile range squarely in the **Fair** and **Good** credit categories.  It
-is interesting to note that after the introduction of the Prosper Score there
-are no longer values below 600 for CreditScoreRangeLower.  This fits with the
-earlier suggestion that credit standards were tightened following the
-introduction of the Prosper Score.
+interquartile range squarely in the **Fair** and **Good** credit categories.
+It is interesting to note that after the introduction of the Prosper Score there
+are no longer any loans with Credit Scores below 600.  This is consistent with
+our previous idea that credit standards were tightened when lending resumed in
+Q3 2009.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 # convert the character string to a date
@@ -322,14 +367,18 @@ would have thought based solely on the Employment Duration, but still consistent
 with the idea that the core customer of Prosper tends to be younger.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data, aes(x = DebtToIncomeRatio)) +
+loan_data_DTI_lt_1 <- subset(loan_data, DebtToIncomeRatio <= 1)
+grid.arrange(ggplot(data = loan_data_DTI_lt_1, aes(x = DebtToIncomeRatio)) +
     geom_histogram(binwidth = .01) +
-    scale_x_continuous(limits = c(0, 1)) +
-    facet_wrap(~prosper_score)
+    scale_x_continuous(limits = c(0, 1)),
+    ggplot(data = loan_data_DTI_lt_1, aes(x = 1, y = DebtToIncomeRatio)) +
+        geom_boxplot(), nrow = 1)
 ```
 
 The distribution of DebtToIncome is fairly normal when looking at the region
 between 0 and 1, which is where the vast majority of the observations lie.
+There is still a number of outliers.  In the bivariate analysis I would expect
+these higher DTI loans to have higher Borrower Rates.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 summary(loan_data_pre_prosper_score$DebtToIncomeRatio)
@@ -352,15 +401,14 @@ ggplot(loan_data, aes(x = IncomeRange)) +
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data, aes(x = IncomeVerifiable)) +
-    geom_histogram(stat = "count") +
-    geom_text(stat="count", aes(label = ..count..), vjust = -.5) +
-    facet_wrap(~prosper_score)
+    geom_bar() +
+    geom_text(stat="count", aes(label = ..count..), vjust = -.5)
 ```
 
-It looks as though the relative frequency of borrowers without verfied income
-has increased.  This may suggest that this variable is not overly important to
-the underwriting process.  The Prosper scoring algorithm may not use or give it
-much weight.
+The majority of borrowers can verify their income.  I would expect this feature
+to be associated with the Borrower Rate.  On average we should expect that
+borrowers who can not verify their income would get higher interest rates, all
+other things being equal.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 # add a field indicating whether the loan is active or not based on the
@@ -377,29 +425,36 @@ active_loans <- filter(loan_data, active)
 active_loans$LoanStatus <- factor(active_loans$LoanStatus)
 
 # factor levels are not in a logical order
-active_loans$LoanStatus <- factor(active_loans$LoanStatus,
-                                           levels = c('FinalPaymentInProgress',
-                                                      'Current', 'Past Due (1-15 days)',
-                                                      'Past Due (16-30 days)',
-                                                      'Past Due (31-60 days)',
-                                                      'Past Due (61-90 days)',
-                                                      'Past Due (91-120 days)',
-                                                      'Past Due (>120 days)'))
+active_loans$LoanStatus <- factor(
+    active_loans$LoanStatus, levels = c('FinalPaymentInProgress',
+                                        'Current', 'Past Due (1-15 days)',
+                                        'Past Due (16-30 days)',
+                                        'Past Due (31-60 days)',
+                                        'Past Due (61-90 days)',
+                                        'Past Due (91-120 days)',
+                                        'Past Due (>120 days)'))
 
 
 inactive_loans <- filter(loan_data, !active)
 inactive_loans$LoanStatus <- factor(inactive_loans$LoanStatus)
 
 # factor levels are not in a logical order
-inactive_loans$LoanStatus <- factor(inactive_loans$LoanStatus,
-                                           levels = c('Completed', 'Cancelled',
-                                                      'Defaulted', 'Chargedoff'))
+inactive_loans$LoanStatus <- factor(
+    inactive_loans$LoanStatus, levels = c('Completed', 'Cancelled', 
+                                          'Defaulted', 'Chargedoff'))
+```
 
-
-ggplot(data = loan_data, aes(x = LoanStatus)) +
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+ggplot(data = active_loans, aes(x = LoanStatus)) +
     geom_bar() +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-    facet_wrap(~active)
+    scale_y_log10() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+ggplot(data = inactive_loans, aes(x = LoanStatus)) +
+    geom_bar() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 ```
 
 As expected, all of the Inactive loans are either Completed, Cancelled,
@@ -438,38 +493,52 @@ loan_data_prosper_score <- merge(loan_data_prosper_score,
                                                      'defaulted')],
                                  by='LoanKey', all.x = TRUE)
 
-loan_data_prosper_score['defaulted'][is.na(loan_data_prosper_score['defaulted'])] <- FALSE
+loan_data_prosper_score['defaulted'][
+    is.na(loan_data_prosper_score['defaulted'])] <- FALSE
 ```
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = defaulted_loans, aes(x = months_to_default)) +
+grid.arrange(ggplot(data = defaulted_loans, aes(x = months_to_default)) +
     geom_histogram(binwidth = 1) +
-    scale_x_continuous(limits = c(0, 60)) +
-    facet_wrap(~prosper_score + Term)
+    coord_cartesian(xlim = c(0, 60)),
+    ggplot(data = defaulted_loans, aes(x = 1, y = months_to_default)) +
+        geom_boxplot() +
+        coord_cartesian(ylim = c(0, 60)), nrow = 1)
 ```
-
-
-
-```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = defaulted_loans, aes(x = prosper_score, y = months_to_default)) +
-    geom_boxplot() +
-    scale_y_continuous(limits = c(0, 60))
-```
-
-Interestingly, loans default sooner on average after the introduction of the
-Prosper Score, thought the distribution is narrower.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 summary(subset(defaulted_loans, prosper_score == FALSE)$months_to_default)
 ```
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-summary(subset(defaulted_loans, prosper_score == TRUE)$months_to_default)
+summary(subset(defaulted_loans, prosper_score == TRUE &
+                   months_to_default > 0)$months_to_default)
 ```
+
+Interestingly, loans default sooner on average after the introduction of the
+Prosper Score, though the distribution is narrower.  Of those borrowers that
+default, 50% will defaulted in a small 9 month window between 9 and 19 months
+for loans originated with a Prosper Score.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = defaulted_loans, aes(x = year(LoanOriginationDate))) +
     geom_histogram(stat="count")
+```
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+grid.arrange(ggplot(data = loan_data, aes(x = TradesOpenedLast6Months)) +
+    geom_bar(),
+    ggplot(data = loan_data, aes(x = 1, y = TradesOpenedLast6Months)) +
+        geom_boxplot() , nrow = 1)
+```
+
+This feature represents the number of credit accounts opened within the last 6
+months.  This distribution is highly skewed, with the mode of the distribution
+being 0.  Other things being equal, I would expect those borrowers who have
+non-zero values for this feature to have higher interest rates.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+summary(loan_data$TradesOpenedLast6Months)
 ```
 
 
@@ -490,7 +559,7 @@ of repayment.
 investigation into your feature(s) of interest?
 
 Variables such as Listing Category, Current Delinquencies, and
-Delinquencies Last 7 Years may also provide information about the likelihood of
+Trades Opened Last 6 Months may also provide information about the likelihood of
 repayment.
 
 ### Did you create any new variables from existing variables in the dataset?
@@ -500,7 +569,9 @@ two, prosper_score and active are boolean flags.  The field prosper_score
 indicates if the loan was originated prior to the introduction of the score or
 after (TRUE = after).  Similarly, active is a flag that tags loans according
 to their LoanStatus (inactive loans are those with LoanStatus in 'Completed',
-'Cancelled', 'Chargedoff', 'Defaulted')
+'Cancelled', 'Chargedoff', 'Defaulted').  I also created a **months_to_default**
+variable to measure the number of months from origination to default for loans
+in either the **defaulted** or **charged-off** Loan Status.
 
 ### Of the features you investigated, were there any unusual distributions? \
 Did you perform any operations on the data to tidy, adjust, or change the form \
@@ -512,25 +583,25 @@ made sense when visualized.  For example, the ProsperRating..Alpha. variable was
 re-ordered to go from the best rating to the worst.
 
 # Bivariate Analysis
-```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots}
-# set the factor levels to be in order of decreasing quality
-loan_data$ProsperRating..Alpha. <- factor(loan_data$ProsperRating..Alpha.,
-                                           levels = c('AA', 'A', 'B', 'C',
-                                                      'D', 'E', 'HR'))
-
-ggplot(data = loan_data, aes(x = ProsperRating..Alpha., 
-                             y = CreditScoreRangeLower)) +
-    geom_boxplot() +
-    scale_y_continuous(limits = c(300, 900))
+```{r echo=FALSE, message=FALSE, Bivariate_Plots}
+cols_to_keep <- c(6, 10, 13, 17, 18, 22, 27, 35, 37, 39, 43, 47, 48, 64, 81)
+ggcorr(data = loan_data_prosper_score[cols_to_keep], geom = 'circle',
+       label = TRUE,
+       label_size = 3,
+       nbreaks = 5,
+       hjust = 1,
+       layout.exp = 2)
 ```
 
-The boxplot above gives a pretty clear indication that the credit profile of
-the borrowers shifted with the introduction of the prosper score in mid-2009.
-The pre-prosper score loans have significantly lower credit scores, with the
-median being below the median value for all of the Prosper Rating groups (even
-the HR - High Risk category).
+Clearly the strongest correlations are between Prosper Score and Estimated Loss
+and Borrower Rate and Estimated Loss.  This makes sense because the Prosper
+Score is a measure of the riskiness of the borrower and the Borrower Rate
+should be a reflection of that riskiness.  The more likely the borrower is to
+default on the loan the more Prosper must charge to compensate for that risk.
 
-```{r echo = FALSE, message=FALSE, warning=FALSE}
+Let's get a look at the Estimated Loss and Borrower Rate.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
 ggplot(data = loan_data_prosper_score, aes(x = EstimatedLoss , 
                                            y = BorrowerRate)) +
     geom_point(alpha = 1/3) +
@@ -543,7 +614,7 @@ is already above 30%, which means we are near the maximum rates seen
 earlier.  This upper bound on the interest rate will clearly distort the
 relationship as we can see above.
 
-I'm curious how closely the Estimate Loss correlates to the Prosper Rating
+I'm curious how closely the Estimated Loss correlates to the Prosper Rating
 categories.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
@@ -559,6 +630,7 @@ Expected Loss.
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 with(loan_data_prosper_score, tapply(EstimatedLoss, ProsperRating..Alpha., min))
 ```
+
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 with(loan_data_prosper_score, tapply(EstimatedLoss, ProsperRating..Alpha., max))
 ```
@@ -576,7 +648,34 @@ Unlike the boxplot of Prosper Rating and Estimated Loss, the number of outliers
 in the boxplot above and the overlap across rating categories is curious.
 Why would someone in the highest rating category be paying in excess of 15%
 interest?  This suggests that there are other factors driving the final Borrower
-Rate.
+Rate, which may be reflected in the Prosper Score.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# set the factor levels to be in order of decreasing quality
+loan_data$ProsperRating..Alpha. <- factor(loan_data$ProsperRating..Alpha.,
+                                           levels = c('AA', 'A', 'B', 'C',
+                                                      'D', 'E', 'HR'))
+
+ggplot(data = loan_data, aes(x = ProsperRating..Alpha., 
+                             y = CreditScoreRangeLower)) + 
+    geom_boxplot() + 
+    geom_jitter(alpha = .01) + 
+    stat_summary(fun.y = 'mean',
+                 geom = 'point',
+                 color = 'red',
+                 shape = 20,
+                 size = 4) + 
+    scale_y_continuous(limits = c(300, 900))
+```
+
+The boxplot above gives a pretty clear indication that the credit profile of
+the borrowers shifted with the introduction of the prosper score in mid-2009.
+The pre-prosper score loans have significantly lower credit scores, with the
+median being below the median value for all of the Prosper Rating groups (even
+the HR - High Risk category).  It also shows the relationship between the
+rating categories and the credit score, which is as we would expect.  We can
+also see that category C is the most dense rating category, which is consistent
+with what we saw in the univariate analysis.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data_prosper_score, aes(x = CreditScoreRangeLower,
@@ -593,9 +692,6 @@ the interest rate decreases.
 ggplot(data = loan_data_prosper_score, aes(x = ProsperRating..Alpha., 
                                            y = ProsperScore)) +
     geom_boxplot()
-
-    #geom_point(alpha = 1/10, position = position_jitter(width = .2))
-
 ```
 
 The relationship between Prosper Score and Prosper Rating is not as strong as I
@@ -604,15 +700,50 @@ expect, there is quite a lot of variability.  Let's see if there are other
 features of the data that may help explain the Prosper Score better.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data_prosper_score, aes(x = CreditScoreRangeLower,
-                                           y = ProsperScore)) +
-    geom_point(alpha = 1/10, position = position_jitter(width = 7)) +
-    geom_smooth()
+# prepare the data for use in a heatmap
+pScore_cScore <- loan_data_prosper_score[, c(17,27)]
+# convert the unique values of Credit Score into column names and the row
+# values become the count within each Prosper Score
+pScore_cScore <- dcast(pScore_cScore, ProsperScore ~CreditScoreRangeLower)
+# drop the NA row
+pScore_cScore <- pScore_cScore[1:11,]
+row.names(pScore_cScore) <- pScore_cScore$ProsperScore
+# drop the Prosper Score column
+pScore_cScore <- pScore_cScore[,2:16]
+# exclude the NA row from the map and convert to a matrix
+pScore_cScore_matrix <- data.matrix(pScore_cScore)
+
+heatmap(pScore_cScore_matrix, Rowv = NA, Colv = NA, 
+        col = brewer.pal(9, "Blues"),
+        scale = 'column', margins = c(5,5),
+        xlab = 'Credit Score',
+        ylab = 'Prosper Score')
 ```
 
 The CreditScoreRangeLower feature would be high on the list of explanatory
-variables to include in any model of Prosper Score.  Though there is
-definitely a lot of variation the relationship is clear.
+variables to include in any model of Prosper Score.  There is a clear positive
+correlation between the Credit Score and the Prosper Score.  It's quite
+possible that the credit score is an input into the Prosper Score algorithm.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+ggplot(data = loan_data_prosper_score, aes(x = IsBorrowerHomeowner,
+                                           y = BorrowerRate)) +
+    geom_boxplot()
+```
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+summary(subset(loan_data_prosper_score, 
+               IsBorrowerHomeowner == TRUE)$BorrowerRate)
+```
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+summary(subset(loan_data_prosper_score, 
+               IsBorrowerHomeowner == FALSE)$BorrowerRate)
+```
+
+As expected, borrowers who are homeowners command lower interest rates on
+average than non-homeowners. It is likely that home ownership is correlated with
+other features like employment and credit history.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data_prosper_score, aes(x = ProsperScore,
@@ -647,11 +778,10 @@ ggplot(data = loan_data_prosper_score, aes(x = ProsperScore,
 
 ```
 
-Similar to DTI and InquiriesLast6Months, the strength of the relationship between
-TradesOpenedLast6Months and Prosper Score is rather weak.  It still may be a
-component of the Prosper Scoring alorithm.  Opening a lot of credit accounts
-could be an indication of impending financial stress.
-
+Similar to DTI and InquiriesLast6Months, the strength of the relationship 
+between TradesOpenedLast6Months and Prosper Score is rather weak.  It still may
+be a component of the Prosper Scoring alorithm.  Opening a lot of credit
+accounts could be an indication of impending financial stress.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data, aes(x = listing_category,
@@ -702,51 +832,42 @@ job at capturing the riskiness of loans.  At each Credit Score level the
 defaulted loans group tends to have a lower average ProsperScore
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data_prosper_score, aes(x = BorrowerRate,
-                                           fill = defaulted)) +
-    facet_wrap(~ ProsperScore, scale = 'free_y') +
-    geom_histogram(binwidth = .01) +
-    geom_vline(aes(xintercept = .2), color = 'red') +
-    scale_fill_brewer(type = 'qual', palette = 'Dark2')
+ggplot(data = loan_data_prosper_score, aes(x = factor(ProsperScore),
+                                           y = BorrowerRate)) +
+    geom_boxplot(aes(fill = defaulted))
 ```
-
-The facet grid above shows that defaults tend to come from loans with Borrower
-Rates above 20%.  The only Prosper Score buckets that break with this pattern
-are those with scores of 8 or above.
-
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data, aes(x = listing_category,
-                             y = BorrowerRate, color = defaulted)) +
+                             y = BorrowerRate, fill = defaulted)) +
     geom_boxplot() +
     theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 ```
 
-This boxplot above is interesting in that it shows a consistent pattern of
-higher Borrower Rates being associated with defaulted loans.  Since the
-borrower rate should be a function of the riskiness of the loan, this pattern
-suggests that risky loans are being identified reasonably well.
-
-According to the [Prosper Website]
-(https://www.prosper.com/plp/general-estimated_loss_rates/) the Estimated Loss
-is initially derived from the Prosper Score and the FICO Score.
+The boxplots above shows loans that default carry higher interest rates on
+average, though it is interesting that there are a wide range of outliers
+at each Prosper Score.  This is a clear indication that factors other than
+Prosper Score determine the Borrower Rate.  The same higher interest rates on
+defaulted loans can be seen across the listing categories as well.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data_prosper_score, aes(x = CreditScoreRangeLower,
-                                           y = ProsperScore,
-                                           color = cut(EstimatedLoss,
+loan_data_prosper_score$ProsperScore_bucket <- cut(
+    loan_data_prosper_score$ProsperScore, c(1, 4, 6, 8, 11))
+
+ggplot(data = loan_data_prosper_score, aes(y = CreditScoreRangeLower,
+                                           x = ProsperScore_bucket,
+                                           fill = cut(EstimatedLoss,
                                                    breaks = c(0, .02, .04, .06,
                                                               .09, .12, .15,
                                                               include.lowest =
                                                                   TRUE)))) +
-    geom_point(alpha = .9, position = position_jitter(width = 7)) +
-    scale_color_brewer(palette = 'Spectral') +
-    labs(color = 'Estimated Loss')
+    geom_boxplot() + ylim(c(600, 800)) + labs(aes(fill = 'Estimated Loss'))
+    
 ```
 
 The visualization above shows the relationship we would expect based on the
 statements from the Prosper website.  The combination of Prosper Score and
-FICO does correlate to the Expected Loss.  There is quite a bit of variability.
+FICO does correlate to the Expected Loss.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots}
 ggplot(data = loan_data_prosper_score, aes(x = CreditScoreRangeLower, 
@@ -783,6 +904,7 @@ ggplot(data = map, aes(long, lat)) +
     geom_text(data = cnames, aes(long, lat, label = state_abb), size = 3) +
     coord_map()
 ```
+
 From the choropleth above we can see a pretty clear pattern of higher default
 rates in the Southeast portion of the country.  The only exception to this
 is South Dakota, which has the highest default rate in the country.
@@ -829,50 +951,56 @@ including it here.
 
 ### Plot One
 ```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_One}
-ggplot(data = loan_data_prosper_score, aes(x = CreditScoreRangeLower,
-                                           y = ProsperScore,
-                                           color = cut(EstimatedLoss,
+ggplot(data = loan_data_prosper_score, aes(y = CreditScoreRangeLower,
+                                           x = ProsperScore_bucket,
+                                           fill = cut(EstimatedLoss,
                                                    breaks = c(0, .02, .04, .06,
                                                               .09, .12, .15,
                                                               include.lowest =
                                                                   TRUE)))) +
-    geom_point(alpha = .9, position = position_jitter(width = 7)) +
-    scale_color_brewer(palette = 'Spectral') +
-    labs(color = 'Estimated Loss Range') +
-    ggtitle(label = 'Estimated Loss', subtitle = 'by Prosper & Credit Score') +
-    labs(x = 'Credit Score') + labs(y = 'Prosper Score')
+    geom_boxplot() + ylim(c(600, 800)) +
+    labs(fill = 'Estimated Loss Range') +
+    ggtitle(label = 'Estimated Loss', 
+            subtitle = 'by Prosper Score Bucket & Credit Score') +
+    labs(x = 'Prosper Score Bucket', y = 'Credit Score')
 ```
 
 ### Description One
 
-Though there is a bit of crowding, I think this scatterplot shows a clear
-pattern of higher Prosper Scores and higher Credit Scores resulting in lower
-estimated losses and vice-versa.
+This boxplot reflects the 11 Prosper Rating categories grouped into buckets.
+Each Prosper Rating bucket is broken down into Estimated Loss range buckets.  On
+the y-axis we show the Credit Score.  What this boxplot communicates is the
+positive relationship between the internal Prosper Score and the external
+Credit Score for the borrowers. The higher Prosper Score buckets contain larger
+amounts of loans with lower estimated losses, while the lower Prosper Score
+buckets contain more loans from the higher estimated loss buckets.
 
 ### Plot Two
 ```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Two}
-ggplot(data = loan_data_prosper_score, aes(x = BorrowerRate,
-                                           fill = defaulted)) +
-    facet_wrap(~ ProsperScore) +
-    geom_histogram(binwidth = .01) +
-    coord_cartesian(ylim = c(0, 1250)) +
-    geom_vline(aes(xintercept = .2), color = 'red') +
-    scale_fill_brewer(type = 'qual', palette = 'Dark2') +
-    ggtitle(label = 'Default vs Non-Default Frequency', subtitle = 'by Prosper Score' ) +
-    labs(x = 'Borrower Rate', y = 'Loan Count') +
-    labs(color = 'Defaulted') +
-    scale_x_continuous(labels = scales::percent) +
-    scale_y_continuous(labels = scales::comma)
+ggplot(data = loan_data_prosper_score, aes(x = factor(ProsperScore),
+                                           y = BorrowerRate)) +
+    geom_boxplot(aes(fill = defaulted)) +
+    ggtitle(label = 'Borrwer Rate by Prosper Score', 
+            subtitle = 'for Defaulted and Non-Defaulted Loans' ) +
+    labs(x = 'Prosper Score', y = 'Borrower Rate') +
+    labs(fill = 'Defaulted')
 ```
 
 ### Description Two
 
-This facet grid shows the count of loans broken down by Prosper Score and
-further broken down by whether the loan defaulted or not.  On the x axis we
-show the interest rate of the loan.  In looking at this you can see that the
-majority of loans that default have interest rates above 20%.  It also gives
-information about the level of default within each Prosper Score and across
-Prosper Scores.
+This boxplot shows the relationship of Borrower Rate to Prosper Score and
+further breaks down the relationship by whether the loan defaulted or not.  On
+the y-axis we show the interest rate of the loan.  There is a clear pattern of
+higher interest rates for lower Proser Scores.  This is as we would expect
+because the Prosper Score is an indication of the riskiness of the loan and the
+interest rate is the main mechanism to compensate investors for their level of
+risk.  What is particularly interest, and an avenue for further investigation,
+is the number of outliers.  There are loans with Prosper Scores of 1 (the worst)
+with interest rates near those of the highest Prosper Score borrowers.
+Similarly, there are loans with the highest Prosper Score with interest rates
+near 20%.  Understanding these outliers would probably answer a lot of questions
+about the Prosper Scoring algorithm.  Nonetheless, the expected negative
+correlation is observed in the data.
 
 ### Plot Three
 ```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
@@ -887,9 +1015,11 @@ ggplot(data = map, aes(long, lat)) +
 
 ### Description Three
 
-While only a basic choropleth, this visualization does show a cluster of higher
-default levels in the southeastern portion of the U.S.
-------
+While only a basic choropleth, this visualization shows a cluster of higher
+default levels in the southeastern portion of the U.S..  The default rate is
+measured as the number of loans with Loan Statuses of either **Defaulted** or
+**Chargedoff** in each state as a percentage of all loans originated in that
+state.
 
 # Reflection
 
