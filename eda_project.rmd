@@ -12,6 +12,7 @@ library(gridExtra)
 library(GGally)
 library(reshape2)
 library(RColorBrewer)
+library(gplots)
 library(maps)
 ```
 
@@ -143,7 +144,7 @@ loan_data_prosper_score <- subset(loan_data, prosper_score)
 ```
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data, aes(x = Term)) +
+ggplot(data = loan_data, aes(x = factor(Term))) +
     geom_bar()
 ```
 
@@ -584,7 +585,12 @@ re-ordered to go from the best rating to the worst.
 
 # Bivariate Analysis
 ```{r echo=FALSE, message=FALSE, Bivariate_Plots}
-cols_to_keep <- c(6, 10, 13, 17, 18, 22, 27, 35, 37, 39, 43, 47, 48, 64, 81)
+cols_to_keep <- c('Term', 'BorrowerRate', 'EstimatedLoss', 'ProsperScore',
+                  'ListingCategory..numeric.', 'EmploymentStatusDuration',
+                  'CreditScoreRangeLower', 'InquiriesLast6Months', 
+                  'CurrentDelinquencies', 'DelinquenciesLast7Years',
+                  'BankcardUtilization', 'TradesOpenedLast6Months',
+                  'DebtToIncomeRatio', 'LoanOriginalAmount', 'Investors')
 ggcorr(data = loan_data_prosper_score[cols_to_keep], geom = 'circle',
        label = TRUE,
        label_size = 3,
@@ -701,7 +707,8 @@ features of the data that may help explain the Prosper Score better.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 # prepare the data for use in a heatmap
-pScore_cScore <- loan_data_prosper_score[, c(17,27)]
+pScore_cScore <- loan_data_prosper_score[, c("ProsperScore", 
+                                             "CreditScoreRangeLower")]
 # convert the unique values of Credit Score into column names and the row
 # values become the count within each Prosper Score
 pScore_cScore <- dcast(pScore_cScore, ProsperScore ~CreditScoreRangeLower)
@@ -713,7 +720,7 @@ pScore_cScore <- pScore_cScore[,2:16]
 # exclude the NA row from the map and convert to a matrix
 pScore_cScore_matrix <- data.matrix(pScore_cScore)
 
-heatmap(pScore_cScore_matrix, Rowv = NA, Colv = NA, 
+heatmap.2(pScore_cScore_matrix, Rowv = NA, Colv = NA, 
         col = brewer.pal(9, "Blues"),
         scale = 'column', margins = c(5,5),
         xlab = 'Credit Score',
@@ -821,17 +828,6 @@ used for generate Credit Scores.
 
 # Multivariate Plots Section
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
-ggplot(data = loan_data_prosper_score, aes(x = CreditScoreRangeLower , 
-                                           y = ProsperScore,
-                                           color = defaulted)) +
-    geom_point(alpha = 1/2, position = position_jitter(width = 7))
-```
-
-This visualization shows that ProsperScore and Credit Score together do an OK
-job at capturing the riskiness of loans.  At each Credit Score level the
-defaulted loans group tends to have a lower average ProsperScore
-
-```{r echo = FALSE, message=FALSE, warning=FALSE}
 ggplot(data = loan_data_prosper_score, aes(x = factor(ProsperScore),
                                            y = BorrowerRate)) +
     geom_boxplot(aes(fill = defaulted))
@@ -870,17 +866,22 @@ statements from the Prosper website.  The combination of Prosper Score and
 FICO does correlate to the Expected Loss.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots}
-ggplot(data = loan_data_prosper_score, aes(x = CreditScoreRangeLower, 
-                                           y = DebtToIncomeRatio,
-                                           colour = defaulted)) +
-    geom_point(position = position_jitter(width = 7), alpha = 1/2) +
-    scale_color_brewer(type = 'qual', palette = 'Paired') +
-    coord_cartesian(ylim = c(0, 1))
+grid.arrange(ggplot(data = loan_data_prosper_score, 
+                    aes(x = CreditScoreRangeLower, fill = defaulted)) +
+    geom_bar() + guides(fill = FALSE) +
+        scale_y_log10(),
+    ggplot(data = loan_data_prosper_score,
+           aes(x = DebtToIncomeRatio, fill = defaulted)) +
+        geom_bar() +
+        scale_x_reverse(lim = c(1, 0)) +
+        scale_y_log10(), nrow = 1)
 ```
 
-This scatterplot supports the idea that defaults occur more frequently for
+These barplots support the idea that defaults occur more frequently for
 lower credit quality borrowers (lower credit score).  It also gives some
-evidence that higher debt to income ratios play a role in defaults.
+evidence that higher debt to income ratios play a role in defaults.  Even though
+there are more defaults at lower DTI values, they are a smaller proportion of
+the loans at that DTI.
 
 ```{r echo = FALSE, message=FALSE, warning=FALSE}
 loan_data_by_state <- group_by(loan_data_prosper_score, region)
@@ -964,6 +965,11 @@ ggplot(data = loan_data_prosper_score, aes(y = CreditScoreRangeLower,
             subtitle = 'by Prosper Score Bucket & Credit Score') +
     labs(x = 'Prosper Score Bucket', y = 'Credit Score')
 ```
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+loss_pScoreBucket <- group_by(loan_data_prosper_score, 
+                                         ProsperScore_bucket)
+summarise(loss_pScoreBucket, mean(EstimatedLoss))
+```
 
 ### Description One
 
@@ -984,6 +990,12 @@ ggplot(data = loan_data_prosper_score, aes(x = factor(ProsperScore),
             subtitle = 'for Defaulted and Non-Defaulted Loans' ) +
     labs(x = 'Prosper Score', y = 'Borrower Rate') +
     labs(fill = 'Defaulted')
+```
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+default_by_pScore <- group_by(loan_data_prosper_score, 
+                              ProsperScore)
+summarise(default_by_pScore, default_pct = sum(defaulted,
+                                               na.rm = TRUE) / n())
 ```
 
 ### Description Two
@@ -1011,6 +1023,10 @@ ggplot(data = map, aes(long, lat)) +
     ggtitle(label = 'Default Rate', subtitle = 'by State') +
     labs(fill = 'Default Rate') +
     labs(x = 'Longitude', y = 'Latitude')
+```
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+head(state_default_rates)
 ```
 
 ### Description Three
